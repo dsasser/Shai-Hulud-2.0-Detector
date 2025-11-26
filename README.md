@@ -326,9 +326,9 @@ The easiest way to use Shai-Hulud Detector is as a GitHub Action. **Now availabl
 
 You can also run the detector locally for development or CI systems without GitHub Actions:
 
-#### Quick Bash Scanner (Recommended for Local Use)
+#### Python Scanner (Recommended for Local Use)
 
-The fastest way to scan your projects locally is using the bash scanner script:
+The most comprehensive way to scan your projects locally is using the Python scanner:
 
 ```bash
 # Clone the repository
@@ -336,28 +336,51 @@ git clone https://github.com/gensecaihq/Shai-Hulud-2.0-Detector.git
 cd Shai-Hulud-2.0-Detector
 
 # Scan current directory
+./scan-node-modules.py
+
+# Scan specific directory
+./scan-node-modules.py /path/to/your/project
+
+# Scan with custom depth
+./scan-node-modules.py --depth 20 ~/projects
+```
+
+**Features:**
+- ✅ **All detection capabilities** from the GitHub Action workflow
+- ✅ Checks for 790+ compromised packages
+- ✅ Detects malicious scripts in package.json (setup_bun.js, bun_environment.js)
+- ✅ Scans for TruffleHog activity and credential theft patterns
+- ✅ Detects malicious GitHub Actions runners (SHA1HULUD)
+- ✅ Finds secrets exfiltration files (actionsSecrets.json)
+- ✅ Detects Shai-Hulud git repository references
+- ✅ Checks for webhook exfiltration endpoints
+- ✅ Warns about affected namespace packages with semver ranges
+- ✅ Colorized output with severity categories (Critical/High/Medium/Low)
+- ✅ Fast native JSON parsing
+- ✅ Exit code 0 if clean, 1 if threats found
+
+**Requirements:**
+- Python 3.6+ (pre-installed on most systems)
+- **No external dependencies** - uses only Python standard library
+- **Completely isolated from npm ecosystem** for maximum security
+
+#### Bash Scanner (Lightweight Alternative)
+
+For basic package detection without Python, use the bash scanner:
+
+```bash
+# Scan current directory
 ./scan-node-modules.sh
 
 # Scan specific directory
 ./scan-node-modules.sh /path/to/your/project
-
-# Scan parent directories recursively
-./scan-node-modules.sh ~/projects
 ```
 
-**Features:**
-- ✅ Recursively scans all `node_modules` directories
-- ✅ Checks for 790+ compromised packages
-- ✅ Detects malicious indicator files (setup_bun.js, bun_environment.js, etc.)
-- ✅ Colorized output with severity levels
-- ✅ Fast: Uses `jq` if available, falls back to grep/sed
-- ✅ Exit code 0 if clean, 1 if threats found
+**Note:** The bash scanner only detects compromised packages and malicious indicator files. For comprehensive detection including malicious scripts, TruffleHog activity, and GitHub Actions runners, use the Python scanner above.
 
 **Requirements:**
 - Standard Unix tools: `find`, `grep`, `sed`, `awk`
 - Optional: `jq` (for faster JSON parsing)
-  - macOS: `brew install jq`
-  - Linux: `apt-get install jq` or `yum install jq`
 
 #### Using npx (No Installation)
 
