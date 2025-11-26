@@ -326,6 +326,39 @@ The easiest way to use Shai-Hulud Detector is as a GitHub Action. **Now availabl
 
 You can also run the detector locally for development or CI systems without GitHub Actions:
 
+#### Quick Bash Scanner (Recommended for Local Use)
+
+The fastest way to scan your projects locally is using the bash scanner script:
+
+```bash
+# Clone the repository
+git clone https://github.com/gensecaihq/Shai-Hulud-2.0-Detector.git
+cd Shai-Hulud-2.0-Detector
+
+# Scan current directory
+./scan-node-modules.sh
+
+# Scan specific directory
+./scan-node-modules.sh /path/to/your/project
+
+# Scan parent directories recursively
+./scan-node-modules.sh ~/projects
+```
+
+**Features:**
+- ✅ Recursively scans all `node_modules` directories
+- ✅ Checks for 790+ compromised packages
+- ✅ Detects malicious indicator files (setup_bun.js, bun_environment.js, etc.)
+- ✅ Colorized output with severity levels
+- ✅ Fast: Uses `jq` if available, falls back to grep/sed
+- ✅ Exit code 0 if clean, 1 if threats found
+
+**Requirements:**
+- Standard Unix tools: `find`, `grep`, `sed`, `awk`
+- Optional: `jq` (for faster JSON parsing)
+  - macOS: `brew install jq`
+  - Linux: `apt-get install jq` or `yum install jq`
+
 #### Using npx (No Installation)
 
 ```bash
