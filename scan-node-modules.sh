@@ -6,8 +6,16 @@
 # Recursively scans all node_modules directories for compromised packages
 # and malicious indicator files from the Shai-Hulud 2.0 supply chain attack.
 #
-# Usage: ./scan-node-modules.sh [directory]
-# If no directory specified, scans from current directory
+# Usage: ./scan-node-modules.sh [OPTIONS] [directory]
+#
+# Options:
+#   --depth N        Maximum directory depth to scan (default: 15)
+#   --help           Show this help message
+#
+# Examples:
+#   ./scan-node-modules.sh                    # Scan current directory
+#   ./scan-node-modules.sh ~/projects         # Scan specific directory
+#   ./scan-node-modules.sh --depth 10 .       # Limit scan depth to 10
 # =============================================================================
 
 set -e
@@ -30,9 +38,58 @@ TOTAL_COMPROMISED=0
 TOTAL_MALICIOUS_FILES=0
 THREATS_FOUND=0
 
+# Cache file paths (will be set by load_database)
+PACKAGE_CACHE=""
+MALICIOUS_FILES_CACHE=""
+
+# Configuration
+MAX_DEPTH=15  # Default maximum depth for directory traversal
+
+# Ensure cleanup on exit
+trap cleanup_cache EXIT
+
 # =============================================================================
 # FUNCTIONS
 # =============================================================================
+
+show_help() {
+    cat << EOF
+Shai-Hulud 2.0 Node Modules Scanner
+
+USAGE:
+    ./scan-node-modules.sh [OPTIONS] [directory]
+
+OPTIONS:
+    --depth N        Maximum directory depth to scan (default: 15)
+                     Use higher values for deeply nested projects
+                     Use lower values for faster scans
+    --help          Show this help message
+
+ARGUMENTS:
+    directory       Directory to scan (default: current directory)
+
+EXAMPLES:
+    ./scan-node-modules.sh
+        Scan current directory with default depth (15)
+
+    ./scan-node-modules.sh ~/projects
+        Scan ~/projects directory
+
+    ./scan-node-modules.sh --depth 10 .
+        Scan current directory with maximum depth of 10
+
+    ./scan-node-modules.sh --depth 20 ~/projects/large-monorepo
+        Scan large monorepo with increased depth limit
+
+NOTES:
+    - Default depth of 15 covers most projects including monorepos
+    - Increase depth for very deeply nested node_modules structures
+    - Decrease depth for faster scans if you know your structure is shallow
+    - The depth limit prevents infinite loops from symlinks or circular references
+
+EOF
+    exit 0
+}
 
 print_header() {
     echo ""
@@ -80,6 +137,29 @@ extract_package_names() {
     fi
 }
 
+load_database() {
+    echo -n "Loading package database... "
+
+    # Create temporary files to cache the data
+    PACKAGE_CACHE=$(mktemp)
+    MALICIOUS_FILES_CACHE=$(mktemp)
+
+    # Extract and cache
+    extract_package_names > "$PACKAGE_CACHE"
+    extract_malicious_files > "$MALICIOUS_FILES_CACHE"
+
+    local pkg_count=$(wc -l < "$PACKAGE_CACHE" | tr -d ' ')
+    local file_count=$(wc -l < "$MALICIOUS_FILES_CACHE" | tr -d ' ')
+
+    echo "Done! ($pkg_count packages, $file_count indicators)"
+}
+
+cleanup_cache() {
+    # Clean up temporary files
+    [ -n "$PACKAGE_CACHE" ] && [ -f "$PACKAGE_CACHE" ] && rm -f "$PACKAGE_CACHE"
+    [ -n "$MALICIOUS_FILES_CACHE" ] && [ -f "$MALICIOUS_FILES_CACHE" ] && rm -f "$MALICIOUS_FILES_CACHE"
+}
+
 get_package_severity() {
     local pkg_name="$1"
     if [ "$USE_JQ" -eq 1 ]; then
@@ -92,8 +172,9 @@ get_package_severity() {
 
 find_node_modules_dirs() {
     local search_dir="$1"
-    # Find all node_modules directories, excluding nested ones (node_modules inside node_modules)
-    find "$search_dir" -type d -name "node_modules" -not -path "*/node_modules/*/node_modules/*" 2>/dev/null
+    # Find all node_modules directories, excluding deeply nested ones
+    # Use maxdepth to prevent infinite recursion and excessive scanning
+    find "$search_dir" -maxdepth "$MAX_DEPTH" -type d -name "node_modules" -not -path "*/node_modules/*/node_modules/*" 2>/dev/null
 }
 
 scan_node_modules_dir() {
@@ -104,8 +185,9 @@ scan_node_modules_dir() {
 
     echo -e "${BLUE}📁 Scanning:${NC} $nm_dir"
 
-    # Scan for compromised packages
+    # Scan for compromised packages (reading from cache file)
     while IFS= read -r pkg_name; do
+        [ -z "$pkg_name" ] && continue
         # Handle scoped packages (e.g., @asyncapi/cli)
         local pkg_path="${nm_dir}/${pkg_name}"
 
@@ -115,16 +197,17 @@ scan_node_modules_dir() {
             TOTAL_COMPROMISED=$((TOTAL_COMPROMISED + 1))
             has_issues=1
         fi
-    done < <(extract_package_names)
+    done < "$PACKAGE_CACHE"
 
-    # Scan for malicious indicator files
+    # Scan for malicious indicator files (reading from cache file)
     while IFS= read -r malicious_file; do
+        [ -z "$malicious_file" ] && continue
         while IFS= read -r found_path; do
             found_files+=("$found_path")
             TOTAL_MALICIOUS_FILES=$((TOTAL_MALICIOUS_FILES + 1))
             has_issues=1
         done < <(find "$nm_dir" -type f -name "$malicious_file" 2>/dev/null)
-    done < <(extract_malicious_files)
+    done < "$MALICIOUS_FILES_CACHE"
 
     # Report findings for this directory
     if [ "$has_issues" -eq 0 ]; then
@@ -190,7 +273,34 @@ print_summary() {
 # =============================================================================
 
 main() {
-    local scan_dir="${1:-.}"
+    local scan_dir="."
+
+    # Parse command line arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --depth)
+                if [ -z "$2" ] || ! [[ "$2" =~ ^[0-9]+$ ]]; then
+                    echo -e "${RED}ERROR: --depth requires a positive number${NC}"
+                    echo "Try './scan-node-modules.sh --help' for more information."
+                    exit 1
+                fi
+                MAX_DEPTH="$2"
+                shift 2
+                ;;
+            --help|-h)
+                show_help
+                ;;
+            -*)
+                echo -e "${RED}ERROR: Unknown option: $1${NC}"
+                echo "Try './scan-node-modules.sh --help' for more information."
+                exit 1
+                ;;
+            *)
+                scan_dir="$1"
+                shift
+                ;;
+        esac
+    done
 
     # Validate scan directory
     if [ ! -d "$scan_dir" ]; then
@@ -203,8 +313,11 @@ main() {
 
     print_header
     check_dependencies
+    load_database
+    echo ""
 
     echo -e "${BLUE}Starting scan from:${NC} $scan_dir"
+    echo -e "${BLUE}Maximum depth:${NC} $MAX_DEPTH"
     echo ""
 
     # Find and scan all node_modules directories
